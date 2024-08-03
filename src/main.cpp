@@ -194,6 +194,49 @@ void updateDataOnDisplay(int piece)
   }
 }
 //==============================================================================
+// handle button press
+void handleBtnPress(int state)
+{
+  dw(COI, HIGH);
+  lastCoiHigh = millis();
+  ESPSerial.println("state: " + String(state));
+  switch (state)
+  {
+  case 1:
+    if (modeScreen == 0)
+      modeScreen = 1;
+    else
+      modeScreen = 0;
+    break;
+  case 2:
+    if (mode == 0)
+      mode = 1;
+    else
+      mode = 0;
+    break;
+  case 3:
+    if (selectedRelay == 0)
+      selectedRelay = 1;
+    else
+      selectedRelay = 0;
+    break;
+  case 4:
+    if (selectedRelay == 0)
+    {
+      dw(RELAY1, !dr(RELAY1));
+      dw(LED1, !dr(LED1));
+    }
+    else
+    {
+      dw(RELAY2, !dr(RELAY2));
+      dw(LED2, !dr(LED2));
+    }
+    break;
+  default:
+    break;
+  }
+}
+//==============================================================================
 void setup()
 {
   Serial.begin(115200);
@@ -264,19 +307,13 @@ void loop()
     {
       dw(COI, HIGH);
       lastCoiHigh = millis();
-      if (modeScreen == 0)
-        modeScreen = 1;
-      else
-        modeScreen = 0;
+      handleBtnPress_1(1);
     }
     else if (elapsedTime > 3000)
     {
       dw(COI, HIGH);
       lastCoiHigh = millis();
-      if (mode == 0)
-        mode = 1;
-      else
-        mode = 0;
+      handleBtnPress_1(2);
     }
   }
   // release button 2 for selected thing change
@@ -287,10 +324,7 @@ void loop()
     {
       dw(COI, HIGH);
       lastCoiHigh = millis();
-      if (selectedRelay == 0)
-        selectedRelay = 1;
-      else
-        selectedRelay = 0;
+      handleBtnPress_1(3);
     }
   }
   // release button 3 for selected thing status change
@@ -301,16 +335,7 @@ void loop()
     {
       dw(COI, HIGH);
       lastCoiHigh = millis();
-      if (selectedRelay == 0)
-      {
-        dw(RELAY1, !dr(RELAY1));
-        dw(LED1, !dr(LED1));
-      }
-      else
-      {
-        dw(RELAY2, !dr(RELAY2));
-        dw(LED2, !dr(LED2));
-      }
+      handleBtnPress_1(4);
     }
   }
   // DONE: add modeScreen 1 show info on oled
@@ -377,19 +402,17 @@ void loop()
   {
     String data = ESPSerial.readStringUntil('\n');
     Serial.println(data);
-    if (data == "r1")
+    if (data == "nut1") // mode change
     {
-      dw(RELAY1, !dr(RELAY1));
-      dw(LED1, !dr(LED1));
-      dw(COI, HIGH);
-      lastCoiHigh = millis();
+      handleBtnPress_1(2);
     }
-    if (data == "r2")
+    if (data == "nut2")
     {
-      dw(RELAY2, !dr(RELAY2));
-      dw(LED2, !dr(LED2));
-      dw(COI, HIGH);
-      lastCoiHigh = millis();
+      handleBtnPress_1(3);
+    }
+    if (data == "nut3")
+    {
+      handleBtnPress_1(4);
     }
     // update infor on display
     display.setCursor(1, 57);
