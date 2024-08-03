@@ -39,7 +39,9 @@ float ph = -1.0, soilMoisture = -1.0, soilTemp = -1.0, EC = -1.0, n = -1.0, p = 
 unsigned long lastCoiHigh, lastSend, lastCheckSensor, lastPress1, lastPress2, lastPress3;
 int buttonState1, buttonState2, buttonState3;
 int lastButtonState1, lastButtonState2, lastButtonState3;
-int mode = 0; // mode hien thi man hinh oled
+int modeScreen = 0;    // modeScreen hien thi man hinh oled
+int mode = 0;          // thu cong hoac tu dong
+int selectedRelay = 0; // relay dang duoc chon
 //==============================================================================
 
 #define FRAME_DELAY (42)
@@ -47,7 +49,7 @@ int mode = 0; // mode hien thi man hinh oled
 #define FRAME_HEIGHT (48)
 #define FRAME_COUNT (sizeof(frames) / sizeof(frames[0]))
 const byte PROGMEM frames[][288] = {
-    {0, 0, 0, 0, 0, 3, 192, 0, 0, 2, 64, 0, 0, 6, 96, 0, 1, 4, 32, 128, 3, 132, 33, 192, 4, 124, 62, 32, 12, 32, 12, 48, 4, 0, 0, 32, 2, 0, 0, 64, 3, 0, 0, 192, 3, 3, 192, 192, 2, 12, 48, 64, 30, 8, 16, 124, 96, 16, 8, 14, 64, 16, 8, 6, 64, 16, 8, 6, 112, 16, 8, 14, 30, 8, 16, 120, 2, 4, 48, 64, 3, 3, 192, 192, 3, 0, 0, 192, 2, 0, 0, 64, 4, 0, 0, 32, 12, 48, 4, 48, 4, 124, 62, 32, 3, 132, 33, 192, 1, 4, 32, 128, 0, 6, 96, 0, 0, 2, 64, 0, 0, 3, 192, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 224, 0, 0, 0, 0, 15, 240, 0, 0, 0, 0, 12, 48, 0, 0, 0, 0, 12, 48, 0, 0, 0, 0, 12, 48, 0, 0, 0, 120, 12, 16, 30, 0, 0, 252, 24, 24, 63, 0, 1, 199, 120, 30, 227, 128, 3, 131, 224, 7, 193, 192, 1, 128, 128, 1, 1, 128, 1, 128, 0, 0, 1, 128, 0, 192, 0, 0, 3, 0, 0, 96, 0, 0, 6, 0, 0, 96, 0, 0, 14, 0, 0, 48, 0, 128, 12, 0, 0, 96, 15, 240, 6, 0, 0, 96, 28, 120, 6, 0, 0, 192, 48, 12, 3, 0, 31, 192, 96, 6, 3, 248, 62, 0, 96, 6, 0, 252, 48, 0, 64, 2, 0, 12, 48, 0, 192, 2, 0, 12, 48, 0, 64, 3, 0, 12, 48, 0, 64, 2, 0, 12, 63, 0, 96, 6, 0, 124, 31, 192, 112, 6, 3, 248, 0, 192, 48, 12, 7, 0, 0, 96, 30, 56, 6, 0, 0, 96, 15, 240, 6, 0, 0, 48, 1, 0, 12, 0, 0, 112, 0, 0, 6, 0, 0, 96, 0, 0, 6, 0, 0, 192, 0, 0, 3, 0, 1, 128, 0, 0, 1, 128, 3, 128, 128, 1, 1, 192, 1, 131, 224, 7, 193, 192, 0, 199, 120, 30, 99, 128, 0, 124, 24, 24, 63, 0, 0, 56, 8, 48, 30, 0, 0, 0, 12, 48, 0, 0, 0, 0, 12, 48, 0, 0, 0, 0, 12, 48, 0, 0, 0, 0, 15, 240, 0, 0, 0, 0, 7, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 };
 //==============================================================================
 void displayStartScreen()
@@ -245,20 +247,29 @@ void loop()
   {
     lastPress1 = millis();
   }
-  if (buttonState2 == LOW && lastButtonState1 == HIGH)
+  if (buttonState2 == LOW && lastButtonState2 == HIGH)
   {
     lastPress2 = millis();
   }
-  if (buttonState3 == LOW && lastButtonState1 == HIGH)
+  if (buttonState3 == LOW && lastButtonState3 == HIGH)
   {
     lastPress3 = millis();
   }
 
-  // release button 1 for mode change
+  // release button 1 for modeScreen change
   if (buttonState1 == HIGH && lastButtonState1 == LOW)
   {
     unsigned long elapsedTime = millis() - lastPress1;
-    if (elapsedTime > 3000)
+    if (elapsedTime > 1000 && elapsedTime < 3000)
+    {
+      dw(COI, HIGH);
+      lastCoiHigh = millis();
+      if (modeScreen == 0)
+        modeScreen = 1;
+      else
+        modeScreen = 0;
+    }
+    else if (elapsedTime > 3000)
     {
       dw(COI, HIGH);
       lastCoiHigh = millis();
@@ -274,26 +285,67 @@ void loop()
     unsigned long elapsedTime = millis() - lastPress2;
     if (elapsedTime > 1000 && elapsedTime < 3000)
     {
-      
       dw(COI, HIGH);
       lastCoiHigh = millis();
-
-    }
-    else if (elapsedTime > 3000)
-    {
-      dw(COI, HIGH);
-      lastCoiHigh = millis();
+      if (selectedRelay == 0)
+        selectedRelay = 1;
+      else
+        selectedRelay = 0;
     }
   }
-  //release button 3 for selected thing status change
+  // release button 3 for selected thing status change
   if (buttonState3 == HIGH && lastButtonState3 == LOW)
   {
     unsigned long elapsedTime = millis() - lastPress3;
     if (elapsedTime > 1000)
     {
+      dw(COI, HIGH);
+      lastCoiHigh = millis();
+      if (selectedRelay == 0)
+      {
+        dw(RELAY1, !dr(RELAY1));
+        dw(LED1, !dr(LED1));
+      }
+      else
+      {
+        dw(RELAY2, !dr(RELAY2));
+        dw(LED2, !dr(LED2));
+      }
     }
   }
-  // TODO: add mode 1 show info on oled
+  // DONE: add modeScreen 1 show info on oled
+  if (modeScreen == 1)
+  {
+    display.clearDisplay();
+    // show info of relay 1 and 2 in the oled, the left side is relay 1 and the right side is relay 2, each will hold 1/2 of the width of the oled and 2/3 of the height of the oled
+    if (dr(RELAY1) == HIGH)
+    {
+      display.drawRect(0, 0, display.width() / 2 - 1, display.height() * 2 / 3, SSD1306_WHITE);
+      display.setTextColor(SSD1306_WHITE);
+    }
+    else
+    {
+      display.fillRect(0, 0, display.width() / 2 - 1, display.height() * 2 / 3, SSD1306_WHITE);
+      display.setTextColor(SSD1306_BLACK);
+    }
+    display.setCursor(10, 20);
+    display.print("Relay 1");
+    if (dr(RELAY2) == HIGH)
+    {
+      display.drawRect(display.width() / 2 + 1, 0, display.width() / 2, display.height() * 2 / 3, SSD1306_WHITE);
+      display.setTextColor(SSD1306_WHITE);
+    }
+    else
+    {
+      display.fillRect(display.width() / 2 + 1, 0, display.width() / 2 - 1, display.height() * 2 / 3, SSD1306_WHITE);
+      display.setTextColor(SSD1306_BLACK);
+    }
+    display.setCursor(72, 20);
+    display.print("Relay 2");
+    display.setCursor(29 + 62 * selectedRelay, display.height() * 2 / 3 + 1);
+    display.setTextColor(SSD1306_WHITE);
+    display.write(0x5e);
+  }
 
   if (millis() - lastCoiHigh > 500 && dr(COI) == HIGH)
   {
@@ -314,7 +366,7 @@ void loop()
     display.setTextColor(SSD1306_WHITE); // Draw white text
     readAHT();
     readRS485();
-    if (mode == 0)
+    if (modeScreen == 0)
     {
       updateDataOnDisplay(1);
       updateDataOnDisplay(2);
@@ -325,31 +377,17 @@ void loop()
   {
     String data = ESPSerial.readStringUntil('\n');
     Serial.println(data);
-    if (data == "r1:on")
+    if (data == "r1")
     {
-      dw(RELAY1, HIGH);
-      dw(LED1, HIGH);
+      dw(RELAY1, !dr(RELAY1));
+      dw(LED1, !dr(LED1));
       dw(COI, HIGH);
       lastCoiHigh = millis();
     }
-    else if (data == "r1:off")
+    if (data == "r2")
     {
-      dw(RELAY1, LOW);
-      dw(LED1, LOW);
-      dw(COI, HIGH);
-      lastCoiHigh = millis();
-    }
-    if (data == "r2:on")
-    {
-      dw(RELAY2, HIGH);
-      dw(LED2, HIGH);
-      dw(COI, HIGH);
-      lastCoiHigh = millis();
-    }
-    else if (data == "r2:off")
-    {
-      dw(RELAY2, LOW);
-      dw(LED2, LOW);
+      dw(RELAY2, !dr(RELAY2));
+      dw(LED2, !dr(LED2));
       dw(COI, HIGH);
       lastCoiHigh = millis();
     }
