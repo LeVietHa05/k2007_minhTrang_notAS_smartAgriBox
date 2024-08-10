@@ -4,58 +4,73 @@
 #include <Adafruit_AHTX0.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <SoftwareSerial.h>
+// #include <SoftwareSerial.h>
+#include <HardwareSerial.h>
 #include <ModbusMaster.h>
+#include <WiFi.h>
+#include <WiFiManager.h>
+#include <SocketIoClient.h>
+#include <ArduinoJson.h>
 //==============================================================================
 #define dw digitalWrite
 #define dr digitalRead
-#define COI 2
-#define RS_TX 3
-#define RS_RX 4
-#define RELAY1 5
-#define RELAY2 6
-#define NUT1 7
-#define NUT2 8
-#define NUT3 8
-#define LED1 10
-#define LED2 11
-#define ESP_RX 12
-#define ESP_TX 13
+#define COI 15
+#define RS_TX 17
+#define RS_RX 16
+#define RELAY1 2
+#define RELAY2 0
+#define NUT1 32
+#define NUT2 33
+#define NUT3 25
+#define LED1 26
+#define LED2 27
+// #define ESP_RX 12
+// #define ESP_TX 13
 //---------------------------------------
-#define SCREEN_ADDRESS 0x3D
+#define SCREEN_ADDRESS 0x3C
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 #define OLED_RESET -1    // Reset pin # (or -1 if sharing Arduino reset pin)
+//---------------------------------------
+#define SERVER "27.72.101.90"
+#define PORT 80
+#define ssid "Wokwi-GUEST"
+#define pass ""
+
+#define TOPIC_MEASURE "/esp/measure"
+#define TOPIC_CONTROL "/esp/control"
+#define TOPIC_OTHER "/esp/other"
 //==============================================================================
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 SoftwareSerial RS485Serial(RS_RX, RS_TX); // RX, TX
-SoftwareSerial ESPSerial(ESP_RX, ESP_TX); // RX, TX
+// SoftwareSerial ESPSerial(ESP_RX, ESP_TX); // RX, TX
 ModbusMaster node;
 Adafruit_AHTX0 aht;
+SocketIOclient socketIO;
 //==============================================================================
 sensors_event_t humidity, temp;
 uint8_t address[][6] = {"1Node", "2Node"};
 float ph = -1.0, soilMoisture = -1.0, soilTemp = -1.0, EC = -1.0, n = -1.0, p = -1.0, k = -1.0;
 unsigned long lastCoiHigh, lastSend, lastCheckSensor, lastPress1, lastPress2, lastPress3;
-int buttonState1, buttonState2, buttonState3;
-int lastButtonState1, lastButtonState2, lastButtonState3;
+int buttonState1 = HIGH, buttonState2 = HIGH, buttonState3 = HIGH;
+int lastButtonState1 = HIGH, lastButtonState2 = HIGH, lastButtonState3 = HIGH;
 int modeScreen = 0;    // modeScreen hien thi man hinh oled
 int mode = 0;          // thu cong hoac tu dong
 int selectedRelay = 0; // relay dang duoc chon
 //==============================================================================
 
 #define FRAME_DELAY (42)
-#define FRAME_WIDTH (48)
-#define FRAME_HEIGHT (48)
+#define FRAME_WIDTH (32)
+#define FRAME_HEIGHT (32)
 #define FRAME_COUNT (sizeof(frames) / sizeof(frames[0]))
-const byte PROGMEM frames[][288] = {
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 224, 0, 0, 0, 0, 15, 240, 0, 0, 0, 0, 12, 48, 0, 0, 0, 0, 12, 48, 0, 0, 0, 0, 12, 48, 0, 0, 0, 120, 12, 16, 30, 0, 0, 252, 24, 24, 63, 0, 1, 199, 120, 30, 227, 128, 3, 131, 224, 7, 193, 192, 1, 128, 128, 1, 1, 128, 1, 128, 0, 0, 1, 128, 0, 192, 0, 0, 3, 0, 0, 96, 0, 0, 6, 0, 0, 96, 0, 0, 14, 0, 0, 48, 0, 128, 12, 0, 0, 96, 15, 240, 6, 0, 0, 96, 28, 120, 6, 0, 0, 192, 48, 12, 3, 0, 31, 192, 96, 6, 3, 248, 62, 0, 96, 6, 0, 252, 48, 0, 64, 2, 0, 12, 48, 0, 192, 2, 0, 12, 48, 0, 64, 3, 0, 12, 48, 0, 64, 2, 0, 12, 63, 0, 96, 6, 0, 124, 31, 192, 112, 6, 3, 248, 0, 192, 48, 12, 7, 0, 0, 96, 30, 56, 6, 0, 0, 96, 15, 240, 6, 0, 0, 48, 1, 0, 12, 0, 0, 112, 0, 0, 6, 0, 0, 96, 0, 0, 6, 0, 0, 192, 0, 0, 3, 0, 1, 128, 0, 0, 1, 128, 3, 128, 128, 1, 1, 192, 1, 131, 224, 7, 193, 192, 0, 199, 120, 30, 99, 128, 0, 124, 24, 24, 63, 0, 0, 56, 8, 48, 30, 0, 0, 0, 12, 48, 0, 0, 0, 0, 12, 48, 0, 0, 0, 0, 12, 48, 0, 0, 0, 0, 15, 240, 0, 0, 0, 0, 7, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+const byte PROGMEM frames[][128] = {
+    {0, 0, 0, 0, 0, 3, 192, 0, 0, 2, 64, 0, 0, 6, 96, 0, 1, 4, 32, 128, 3, 132, 33, 192, 4, 124, 62, 32, 12, 32, 12, 48, 4, 0, 0, 32, 2, 0, 0, 64, 3, 0, 0, 192, 3, 3, 192, 192, 2, 12, 48, 64, 30, 8, 16, 124, 96, 16, 8, 14, 64, 16, 8, 6, 64, 16, 8, 6, 112, 16, 8, 14, 30, 8, 16, 120, 2, 4, 48, 64, 3, 3, 192, 192, 3, 0, 0, 192, 2, 0, 0, 64, 4, 0, 0, 32, 12, 48, 4, 48, 4, 124, 62, 32, 3, 132, 33, 192, 1, 4, 32, 128, 0, 6, 96, 0, 0, 2, 64, 0, 0, 3, 192, 0, 0, 0, 0, 0},
 };
 //==============================================================================
 void displayStartScreen()
 {
   display.clearDisplay();
-  display.drawBitmap(40, 8, frames[0], FRAME_WIDTH, FRAME_HEIGHT, 1);
+  display.drawBitmap(40, 16, frames[0], FRAME_WIDTH, FRAME_HEIGHT, 1);
   display.display();
   delay(FRAME_DELAY);
 }
@@ -89,49 +104,49 @@ void toggleLED(int led, int delayTime, int times)
 void readRS485()
 {
   uint8_t result;
-  result = node.readHoldingRegisters(0x06, 1);
+  result = node.readHoldingRegisters(0x0006, 2);
   if (result == node.ku8MBSuccess)
   {
     ph = (float)node.receive() / 100.0;
     Serial.print(ph);
     Serial.print('\t');
   }
-  result = node.readHoldingRegisters(0x15, 1);
+  result = node.readHoldingRegisters(0x0015, 2);
   if (result == node.ku8MBSuccess)
   {
     EC = (float)node.receive();
     Serial.print(EC);
     Serial.print('\t');
   }
-  result = node.readHoldingRegisters(0x1e, 1);
+  result = node.readHoldingRegisters(0x001e, 2);
   if (result == node.ku8MBSuccess)
   {
     n = (float)node.receive();
     Serial.print(n);
     Serial.print('\t');
   }
-  result = node.readHoldingRegisters(0x1f, 1);
+  result = node.readHoldingRegisters(0x001f, 2);
   if (result == node.ku8MBSuccess)
   {
     p = (float)node.receive();
     Serial.print(p);
     Serial.print('\t');
   }
-  result = node.readHoldingRegisters(0x20, 1);
+  result = node.readHoldingRegisters(0x0020, 2);
   if (result == node.ku8MBSuccess)
   {
     k = (float)node.receive();
     Serial.print(k);
     Serial.print('\t');
   }
-  result = node.readHoldingRegisters(0x12, 1);
+  result = node.readHoldingRegisters(0x0012, 2);
   if (result == node.ku8MBSuccess)
   {
     soilMoisture = (float)node.receive() / 10.0;
     Serial.print(soilMoisture);
     Serial.print('\t');
   }
-  result = node.readHoldingRegisters(0x13, 1);
+  result = node.readHoldingRegisters(0x0013, 2);
   if (result == node.ku8MBSuccess)
   {
     k = (float)node.receive() / 10.0;
@@ -140,11 +155,40 @@ void readRS485()
   }
 }
 //==============================================================================
-// send data to esp using only one string
-void sendDataToESP()
+// send data to server
+void sendDataToServer(int type, int buttonType, String message)
 {
-  String data = String(ph) + "," + String(EC) + "," + String(n) + "," + String(p) + "," + String(k) + "," + String(soilMoisture) + "," + String(soilTemp) + "," + String(humidity.relative_humidity) + "," + String(temp.temperature);
-  ESPSerial.println(data);
+  DynamicJsonDocument doc(1024);
+  JsonArray array = doc.to<JsonArray>();
+  if (type == 1)
+  {
+    array.add(TOPIC_MEASURE);
+    JsonObject data = array.createNestedObject();
+    data["temp"] = temp.temperature;
+    data["humi"] = humidity.relative_humidity;
+    data["ph"] = ph;
+    data["soilMoisture"] = soilMoisture;
+    data["soilTemp"] = soilTemp;
+    data["n"] = n;
+    data["p"] = p;
+    data["k"] = k;
+    data["EC"] = EC;
+  }
+  else if (type == 2)
+  {
+    array.add(TOPIC_CONTROL);
+    JsonObject data = array.createNestedObject();
+    data["button"] = buttonType;
+  }
+  else
+  {
+    array.add(TOPIC_OTHER);
+    JsonObject data = array.createNestedObject();
+    data["message"] = message;
+  }
+  String output;
+  serializeJson(doc, output);
+  socketIO.sendEVENT(output);
 }
 //==============================================================================
 // update data on oled display
@@ -152,7 +196,7 @@ void updateDataOnDisplay(int piece)
 {
   if (piece == 1)
   {
-    display.clearDisplay();
+    display.fillRect(0, 0, 128, 55, SSD1306_BLACK);
     display.setCursor(0, 0);
     display.print("Temp: ");
     display.println(temp.temperature);
@@ -192,6 +236,11 @@ void updateDataOnDisplay(int piece)
     display.println(EC);
     display.setCursor(70, 40);
   }
+  else
+  {
+    display.setCursor(0, 0);
+    display.println("test");
+  }
 }
 //==============================================================================
 // handle button press
@@ -199,7 +248,10 @@ void handleBtnPress(int state)
 {
   dw(COI, HIGH);
   lastCoiHigh = millis();
-  ESPSerial.println("state: " + String(state));
+  Serial.print("Button pressed  - ");
+  Serial.println(state);
+  sendDataToServer(2, state, "");
+  // ESPSerial.println("state: " + String(state));
   switch (state)
   {
   case 1:
@@ -237,21 +289,57 @@ void handleBtnPress(int state)
   }
 }
 //==============================================================================
+#define USE_SERIAL Serial
+void socketIOEvent(socketIOmessageType_t type, uint8_t *payload, size_t length)
+{
+  switch (type)
+  {
+  case sIOtype_DISCONNECT:
+    USE_SERIAL.printf("[IOc] Disconnected!\n");
+    break;
+  case sIOtype_CONNECT:
+    USE_SERIAL.printf("[IOc] Connected to url: %s\n", payload);
+
+    // join default namespace (no auto join in Socket.IO V3)
+    socketIO.send(sIOtype_CONNECT, "/");
+    break;
+  case sIOtype_EVENT:
+  {
+    display.setCursor(1, 57);
+    display.fillRect(0, 56, 128, 10, SSD1306_WHITE);
+    display.setTextColor(SSD1306_BLACK);
+    display.print("R");
+    display.setTextColor(SSD1306_BLACK); // Draw white text
+    display.display();
+  }
+  break;
+  case sIOtype_ACK:
+    USE_SERIAL.printf("[IOc] get ack: %u\n", length);
+    break;
+  case sIOtype_ERROR:
+    USE_SERIAL.printf("[IOc] get error: %u\n", length);
+    break;
+  case sIOtype_BINARY_EVENT:
+    USE_SERIAL.printf("[IOc] get binary: %u\n", length);
+    break;
+  case sIOtype_BINARY_ACK:
+    USE_SERIAL.printf("[IOc] get binary ack: %u\n", length);
+    break;
+  }
+}
+//==============================================================================
 void setup()
 {
   Serial.begin(115200);
-  ESPSerial.begin(115200);
+  // ESPSerial.begin(115200);
   Serial.println("Starting...");
   //---------------------------------------
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
   {
     Serial.println(F("SSD1306 allocation failed"));
     // toggle led1 for 2 times 1000ms each
-    toggleLED(LED1, 1000, 2);
+    toggleLED(LED1, 300, 5);
   }
-  display.display();
-  delay(1000); // Pause for 2 seconds
-  display.clearDisplay();
   displayStartScreen();
   delay(2000);
   display.clearDisplay();
@@ -264,6 +352,11 @@ void setup()
   pinMode(NUT3, INPUT_PULLUP);
   pinMode(LED1, OUTPUT);
   pinMode(LED2, OUTPUT);
+  dw(COI, LOW);
+  dw(RELAY1, LOW);
+  dw(RELAY2, LOW);
+  dw(LED1, LOW);
+  dw(LED2, LOW);
   //---------------------------------------
   if (aht.begin())
   {
@@ -272,16 +365,34 @@ void setup()
   else
   {
     Serial.println("Didn't find AHT20");
-    toggleLED(LED1, 1000, 3);
+    toggleLED(LED1, 300, 3);
   }
   //---------------------------------------
-  RS485Serial.begin(4800);
-  node.begin(1, RS485Serial);
+  Serial2.begin(4800, SERIAL_8O1, RS_RX, RS_TX);
+  node.begin(1, Serial2);
+  //---------------------------------------
+
+  // WiFiManager wifiManager;
+  // wifiManager.autoConnect("smartAgriBox");
+  WiFi.begin(ssid, pass);
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("WiFi connected");
+
+  // server address, port and URL
+  socketIO.begin("27.72.101.90", 80, "/socket.io/?EIO=4");
+
+  // event handler
+  socketIO.onEvent(socketIOEvent);
   //---------------------------------------
 }
 
 void loop()
 {
+  socketIO.loop();
   buttonState1 = digitalRead(NUT1);
   buttonState2 = digitalRead(NUT2);
   buttonState3 = digitalRead(NUT3);
@@ -307,13 +418,13 @@ void loop()
     {
       dw(COI, HIGH);
       lastCoiHigh = millis();
-      handleBtnPress_1(1);
+      handleBtnPress(1);
     }
     else if (elapsedTime > 3000)
     {
       dw(COI, HIGH);
       lastCoiHigh = millis();
-      handleBtnPress_1(2);
+      handleBtnPress(2);
     }
   }
   // release button 2 for selected thing change
@@ -324,7 +435,7 @@ void loop()
     {
       dw(COI, HIGH);
       lastCoiHigh = millis();
-      handleBtnPress_1(3);
+      handleBtnPress(3);
     }
   }
   // release button 3 for selected thing status change
@@ -335,15 +446,16 @@ void loop()
     {
       dw(COI, HIGH);
       lastCoiHigh = millis();
-      handleBtnPress_1(4);
+      handleBtnPress(4);
     }
   }
   // DONE: add modeScreen 1 show info on oled
   if (modeScreen == 1)
   {
-    display.clearDisplay();
+
+    display.fillRect(0, 0, 128, 55, SSD1306_BLACK);
     // show info of relay 1 and 2 in the oled, the left side is relay 1 and the right side is relay 2, each will hold 1/2 of the width of the oled and 2/3 of the height of the oled
-    if (dr(RELAY1) == HIGH)
+    if (dr(RELAY1) == LOW)
     {
       display.drawRect(0, 0, display.width() / 2 - 1, display.height() * 2 / 3, SSD1306_WHITE);
       display.setTextColor(SSD1306_WHITE);
@@ -355,7 +467,7 @@ void loop()
     }
     display.setCursor(10, 20);
     display.print("Relay 1");
-    if (dr(RELAY2) == HIGH)
+    if (dr(RELAY2) == LOW)
     {
       display.drawRect(display.width() / 2 + 1, 0, display.width() / 2, display.height() * 2 / 3, SSD1306_WHITE);
       display.setTextColor(SSD1306_WHITE);
@@ -371,55 +483,37 @@ void loop()
     display.setTextColor(SSD1306_WHITE);
     display.write(0x5e);
   }
+  else if (modeScreen == 0)
+  {
+    updateDataOnDisplay(1);
+    updateDataOnDisplay(2);
+    // updateDataOnDisplay(3);
+  }
+  display.fillRect(0, 56, 128, 10, SSD1306_WHITE);
 
   if (millis() - lastCoiHigh > 500 && dr(COI) == HIGH)
   {
     dw(COI, LOW);
   }
-  if (millis() - lastSend > 3000)
+  if (millis() - lastSend > 5000)
   {
-    sendDataToESP();
     lastSend = millis();
     // update infor on display
     display.setCursor(10, 57);
-    display.fillRect(0, 56, 128, 64, SSD1306_WHITE);
     display.setTextColor(SSD1306_BLACK); // Draw white text
-    display.print("S")
+    display.print("S");
+    display.setTextColor(SSD1306_WHITE); // Draw white text
+    sendDataToServer(1, 0, "");
   }
   if (millis() - lastCheckSensor > 3000)
   {
-    display.setTextColor(SSD1306_WHITE); // Draw white text
     readAHT();
     readRS485();
-    if (modeScreen == 0)
-    {
-      updateDataOnDisplay(1);
-      updateDataOnDisplay(2);
-    }
     lastCheckSensor = millis();
   }
-  if (ESPSerial.available())
-  {
-    String data = ESPSerial.readStringUntil('\n');
-    Serial.println(data);
-    if (data == "nut1") // mode change
-    {
-      handleBtnPress_1(2);
-    }
-    if (data == "nut2")
-    {
-      handleBtnPress_1(3);
-    }
-    if (data == "nut3")
-    {
-      handleBtnPress_1(4);
-    }
-    // update infor on display
-    display.setCursor(1, 57);
-    display.fillRect(0, 56, 128, 64, SSD1306_WHITE);
-    display.setTextColor(SSD1306_BLACK); // Draw white text
-    display.print("R")
-  }
-
+  lastButtonState1 = buttonState1;
+  lastButtonState2 = buttonState2;
+  lastButtonState3 = buttonState3;
   display.display();
+  delay(10);
 }
