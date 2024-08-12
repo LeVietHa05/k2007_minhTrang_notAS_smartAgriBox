@@ -42,14 +42,13 @@
 #define TOPIC_OTHER "/esp/other"
 //==============================================================================
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-SoftwareSerial RS485Serial(RS_RX, RS_TX); // RX, TX
+// SoftwareSerial RS485Serial(RS_RX, RS_TX); // RX, TX
 // SoftwareSerial ESPSerial(ESP_RX, ESP_TX); // RX, TX
 ModbusMaster node;
 Adafruit_AHTX0 aht;
 SocketIOclient socketIO;
 //==============================================================================
 sensors_event_t humidity, temp;
-uint8_t address[][6] = {"1Node", "2Node"};
 float ph = -1.0, soilMoisture = -1.0, soilTemp = -1.0, EC = -1.0, n = -1.0, p = -1.0, k = -1.0;
 unsigned long lastCoiHigh, lastSend, lastCheckSensor, lastPress1, lastPress2, lastPress3;
 int buttonState1 = HIGH, buttonState2 = HIGH, buttonState3 = HIGH;
@@ -292,6 +291,7 @@ void handleBtnPress(int state)
 #define USE_SERIAL Serial
 void socketIOEvent(socketIOmessageType_t type, uint8_t *payload, size_t length)
 {
+  String temp = String((char *)payload);
   switch (type)
   {
   case sIOtype_DISCONNECT:
@@ -311,6 +311,22 @@ void socketIOEvent(socketIOmessageType_t type, uint8_t *payload, size_t length)
     display.print("R");
     display.setTextColor(SSD1306_BLACK); // Draw white text
     display.display();
+    if (temp.indexOf("/esp/control") != -1)
+    {
+      DynamicJsonDocument doc(1024);
+      deserializeJson(doc, temp);
+      JsonObject data = doc["data"];
+      int button = data["button"];
+      handleBtnPress(button);
+    }
+    else if (temp.indexOf("/esp/other") != -1)
+    {
+      DynamicJsonDocument doc(1024);
+      deserializeJson(doc, temp);
+      JsonObject data = doc["data"];
+      String message = data["message"];
+      Serial.println(message);
+    }
   }
   break;
   case sIOtype_ACK:
@@ -368,7 +384,7 @@ void setup()
     toggleLED(LED1, 300, 3);
   }
   //---------------------------------------
-  Serial2.begin(4800, SERIAL_8O1, RS_RX, RS_TX);
+  Serial2.begin(9600, SERIAL_8O1, RS_RX, RS_TX);
   node.begin(1, Serial2);
   //---------------------------------------
 
