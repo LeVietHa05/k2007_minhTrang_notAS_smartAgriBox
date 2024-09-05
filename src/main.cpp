@@ -3,7 +3,7 @@
 #include <Wire.h>
 #include <Adafruit_AHTX0.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+#include <Adafruit_SH110X.h>
 // #include <SoftwareSerial.h>
 #include <HardwareSerial.h>
 #include <ModbusMaster.h>
@@ -32,7 +32,7 @@
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 #define OLED_RESET -1    // Reset pin # (or -1 if sharing Arduino reset pin)
 //---------------------------------------
-#define SERVER "27.72.101.90"
+#define SERVER "smartagribox.com"
 #define PORT 80
 #define ssid "Wokwi-GUEST"
 #define pass ""
@@ -41,7 +41,7 @@
 #define TOPIC_CONTROL "/esp/control"
 #define TOPIC_OTHER "/esp/other"
 //==============================================================================
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 // SoftwareSerial RS485Serial(RS_RX, RS_TX); // RX, TX
 // SoftwareSerial ESPSerial(ESP_RX, ESP_TX); // RX, TX
 ModbusMaster node;
@@ -50,9 +50,10 @@ SocketIOclient socketIO;
 //==============================================================================
 sensors_event_t humidity, temp;
 float ph = -1.0, soilMoisture = -1.0, soilTemp = -1.0, EC = -1.0, n = -1.0, p = -1.0, k = -1.0;
-unsigned long lastCoiHigh, lastSend, lastCheckSensor, lastPress1, lastPress2, lastPress3;
+unsigned long lastCoiHigh, lastSend, lastCheckSensor, lastFillRectWhite, lastPress1, lastPress2, lastPress3;
 int buttonState1 = HIGH, buttonState2 = HIGH, buttonState3 = HIGH;
 int lastButtonState1 = HIGH, lastButtonState2 = HIGH, lastButtonState3 = HIGH;
+bool isWifiConnected = false, isSocketIOConnected = false;
 int modeScreen = 0;    // modeScreen hien thi man hinh oled
 int mode = 0;          // thu cong hoac tu dong
 int selectedRelay = 0; // relay dang duoc chon
@@ -72,6 +73,20 @@ void displayStartScreen()
   display.drawBitmap(40, 16, frames[0], FRAME_WIDTH, FRAME_HEIGHT, 1);
   display.display();
   delay(FRAME_DELAY);
+}
+//==============================================================================
+void displayDisplay(String s, int delayTime, bool isNeedNewLine)
+{
+  if (isNeedNewLine)
+  {
+    display.println(s);
+  }
+  else
+  {
+    display.print(s);
+  }
+  display.display();
+  delay(delayTime);
 }
 //==============================================================================
 // read aht sensor and save to humidity and temp
@@ -163,6 +178,7 @@ void sendDataToServer(int type, int buttonType, String message)
   {
     array.add(TOPIC_MEASURE);
     JsonObject data = array.createNestedObject();
+    data["deviceID"] = "esp32";
     data["temp"] = temp.temperature;
     data["humi"] = humidity.relative_humidity;
     data["ph"] = ph;
@@ -177,12 +193,14 @@ void sendDataToServer(int type, int buttonType, String message)
   {
     array.add(TOPIC_CONTROL);
     JsonObject data = array.createNestedObject();
+    data["deviceID"] = "esp32";
     data["button"] = buttonType;
   }
   else
   {
     array.add(TOPIC_OTHER);
     JsonObject data = array.createNestedObject();
+    data["deviceID"] = "esp32";
     data["message"] = message;
   }
   String output;
@@ -195,32 +213,32 @@ void updateDataOnDisplay(int piece)
 {
   if (piece == 1)
   {
-    display.fillRect(0, 0, 128, 55, SSD1306_BLACK);
+    display.fillRect(0, 0, 128, 55, SH110X_BLACK);
     display.setCursor(0, 0);
     display.print("Temp: ");
     display.println(temp.temperature);
-    display.drawFastHLine(0, 8, display.width(), SSD1306_WHITE);
+    display.drawFastHLine(0, 8, display.width(), SH110X_WHITE);
     display.setCursor(0, 10);
     display.print("Humi: ");
     display.println(humidity.relative_humidity);
-    display.drawFastHLine(0, 18, display.width(), SSD1306_WHITE);
+    display.drawFastHLine(0, 18, display.width(), SH110X_WHITE);
     display.setCursor(0, 20);
     display.print("ph: ");
     display.println(ph);
-    display.drawFastHLine(0, 28, display.width(), SSD1306_WHITE);
+    display.drawFastHLine(0, 28, display.width(), SH110X_WHITE);
     display.setCursor(0, 30);
     display.print("sHum: ");
     display.println(soilMoisture);
-    display.drawFastHLine(0, 38, display.width(), SSD1306_WHITE);
+    display.drawFastHLine(0, 38, display.width(), SH110X_WHITE);
     display.setCursor(0, 40);
     display.print("sTemp: ");
     display.println(soilTemp);
-    display.drawFastHLine(0, 48, display.width(), SSD1306_WHITE);
+    display.drawFastHLine(0, 48, display.width(), SH110X_WHITE);
     display.setCursor(0, 50);
   }
   else if (piece == 2)
   {
-    display.drawFastVLine(display.width() / 2, 0, display.height(), SSD1306_WHITE);
+    display.drawFastVLine(display.width() / 2, 0, display.height(), SH110X_WHITE);
     display.setCursor(70, 0);
     display.print("n: ");
     display.println(n);
@@ -291,26 +309,31 @@ void handleBtnPress(int state)
 #define USE_SERIAL Serial
 void socketIOEvent(socketIOmessageType_t type, uint8_t *payload, size_t length)
 {
-  String temp = String((char *)payload);
   switch (type)
   {
   case sIOtype_DISCONNECT:
+  {
+    isSocketIOConnected = false;
     USE_SERIAL.printf("[IOc] Disconnected!\n");
     break;
+  }
   case sIOtype_CONNECT:
+  {
     USE_SERIAL.printf("[IOc] Connected to url: %s\n", payload);
-
+    isSocketIOConnected = true;
     // join default namespace (no auto join in Socket.IO V3)
     socketIO.send(sIOtype_CONNECT, "/");
     break;
+  }
   case sIOtype_EVENT:
   {
     display.setCursor(1, 57);
-    display.fillRect(0, 56, 128, 10, SSD1306_WHITE);
-    display.setTextColor(SSD1306_BLACK);
+    display.fillRect(0, 56, 128, 10, SH110X_WHITE);
+    display.setTextColor(SH110X_BLACK);
     display.print("R");
-    display.setTextColor(SSD1306_BLACK); // Draw white text
+    display.setTextColor(SH110X_BLACK); // Draw white text
     display.display();
+    String temp = String((char *)payload);
     if (temp.indexOf("/esp/control") != -1)
     {
       DynamicJsonDocument doc(1024);
@@ -350,16 +373,22 @@ void setup()
   // ESPSerial.begin(115200);
   Serial.println("Starting...");
   //---------------------------------------
-  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
+  if (!display.begin(SCREEN_ADDRESS, true))
   {
-    Serial.println(F("SSD1306 allocation failed"));
+    Serial.println(F("Oled allocation failed"));
     // toggle led1 for 2 times 1000ms each
     toggleLED(LED1, 300, 5);
   }
   displayStartScreen();
   delay(2000);
   display.clearDisplay();
+  display.setTextColor(SH110X_WHITE);
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  displayDisplay("Smart Agri Box", 100, true);
+  displayDisplay("Starting...", 100, true);
   //---------------------------------------
+  displayDisplay("Pin...", 100, false);
   pinMode(COI, OUTPUT);
   pinMode(RELAY1, OUTPUT);
   pinMode(RELAY2, OUTPUT);
@@ -373,7 +402,9 @@ void setup()
   dw(RELAY2, LOW);
   dw(LED1, LOW);
   dw(LED2, LOW);
+  displayDisplay("Done", 0, true);
   //---------------------------------------
+  displayDisplay("AHT20...", 100, false);
   if (aht.begin())
   {
     Serial.println("Found AHT20");
@@ -383,26 +414,32 @@ void setup()
     Serial.println("Didn't find AHT20");
     toggleLED(LED1, 300, 3);
   }
+  displayDisplay("Done", 0, true);
   //---------------------------------------
+  displayDisplay("RS485...", 100, false);
   Serial2.begin(9600, SERIAL_8O1, RS_RX, RS_TX);
   node.begin(1, Serial2);
+  displayDisplay("Done", 0, true);
   //---------------------------------------
-
-  // WiFiManager wifiManager;
-  // wifiManager.autoConnect("smartAgriBox");
-  WiFi.begin(ssid, pass);
+  displayDisplay("WiFi...", 100, false);
+  WiFiManager wifiManager;
+  wifiManager.autoConnect("smartAgriBox");
+  // WiFi.begin(ssid, pass);
   while (WiFi.status() != WL_CONNECTED)
   {
     delay(500);
     Serial.print(".");
   }
   Serial.println("WiFi connected");
-
+  isWifiConnected = true;
+  displayDisplay("Done", 0, true);
+  displayDisplay("SocketIO...", 100, false);
   // server address, port and URL
-  socketIO.begin("27.72.101.90", 80, "/socket.io/?EIO=4");
+  socketIO.begin(SERVER, 80, "/socket.io/?EIO=4");
 
   // event handler
   socketIO.onEvent(socketIOEvent);
+  displayDisplay("Done", 1000, true);
   //---------------------------------------
 }
 
@@ -469,34 +506,34 @@ void loop()
   if (modeScreen == 1)
   {
 
-    display.fillRect(0, 0, 128, 55, SSD1306_BLACK);
+    display.fillRect(0, 0, 128, 55, SH110X_BLACK);
     // show info of relay 1 and 2 in the oled, the left side is relay 1 and the right side is relay 2, each will hold 1/2 of the width of the oled and 2/3 of the height of the oled
     if (dr(RELAY1) == LOW)
     {
-      display.drawRect(0, 0, display.width() / 2 - 1, display.height() * 2 / 3, SSD1306_WHITE);
-      display.setTextColor(SSD1306_WHITE);
+      display.drawRect(0, 0, display.width() / 2 - 1, display.height() * 2 / 3, SH110X_WHITE);
+      display.setTextColor(SH110X_WHITE);
     }
     else
     {
-      display.fillRect(0, 0, display.width() / 2 - 1, display.height() * 2 / 3, SSD1306_WHITE);
-      display.setTextColor(SSD1306_BLACK);
+      display.fillRect(0, 0, display.width() / 2 - 1, display.height() * 2 / 3, SH110X_WHITE);
+      display.setTextColor(SH110X_BLACK);
     }
     display.setCursor(10, 20);
     display.print("Relay 1");
     if (dr(RELAY2) == LOW)
     {
-      display.drawRect(display.width() / 2 + 1, 0, display.width() / 2, display.height() * 2 / 3, SSD1306_WHITE);
-      display.setTextColor(SSD1306_WHITE);
+      display.drawRect(display.width() / 2 + 1, 0, display.width() / 2, display.height() * 2 / 3, SH110X_WHITE);
+      display.setTextColor(SH110X_WHITE);
     }
     else
     {
-      display.fillRect(display.width() / 2 + 1, 0, display.width() / 2 - 1, display.height() * 2 / 3, SSD1306_WHITE);
-      display.setTextColor(SSD1306_BLACK);
+      display.fillRect(display.width() / 2 + 1, 0, display.width() / 2 - 1, display.height() * 2 / 3, SH110X_WHITE);
+      display.setTextColor(SH110X_BLACK);
     }
     display.setCursor(72, 20);
     display.print("Relay 2");
     display.setCursor(29 + 62 * selectedRelay, display.height() * 2 / 3 + 1);
-    display.setTextColor(SSD1306_WHITE);
+    display.setTextColor(SH110X_WHITE);
     display.write(0x5e);
   }
   else if (modeScreen == 0)
@@ -505,7 +542,32 @@ void loop()
     updateDataOnDisplay(2);
     // updateDataOnDisplay(3);
   }
-  display.fillRect(0, 56, 128, 10, SSD1306_WHITE);
+
+  if (millis() - lastFillRectWhite > 500)
+  {
+    display.fillRect(0, 56, 128, 10, SH110X_WHITE);
+    display.setTextColor(SH110X_BLACK);
+    display.setCursor(80, 57);
+    if (isWifiConnected)
+    {
+      display.print("W:1");
+    }
+    else
+    {
+      display.print("W:0");
+    }
+    display.setCursor(100, 57);
+    if (isSocketIOConnected)
+    {
+      display.print("S:1");
+    }
+    else
+    {
+      display.print("S:0");
+    }
+    display.setTextColor(SH110X_WHITE);
+    lastFillRectWhite = millis();
+  }
 
   if (millis() - lastCoiHigh > 500 && dr(COI) == HIGH)
   {
@@ -516,9 +578,9 @@ void loop()
     lastSend = millis();
     // update infor on display
     display.setCursor(10, 57);
-    display.setTextColor(SSD1306_BLACK); // Draw white text
+    display.setTextColor(SH110X_BLACK); // Draw white text
     display.print("S");
-    display.setTextColor(SSD1306_WHITE); // Draw white text
+    display.setTextColor(SH110X_WHITE); // Draw white text
     sendDataToServer(1, 0, "");
   }
   if (millis() - lastCheckSensor > 3000)
