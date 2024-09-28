@@ -125,12 +125,22 @@ void readRS485()
     Serial.print(ph);
     Serial.print('\t');
   }
+  else
+  {
+    Serial.print("Error reading ph");
+    Serial.println(result);
+  }
   result = node.readHoldingRegisters(0x0015, 2);
   if (result == node.ku8MBSuccess)
   {
     EC = (float)node.receive();
     Serial.print(EC);
     Serial.print('\t');
+  }
+  else
+  {
+    Serial.print("Error reading EC");
+    Serial.println((int)result);
   }
   result = node.readHoldingRegisters(0x001e, 2);
   if (result == node.ku8MBSuccess)
@@ -139,12 +149,20 @@ void readRS485()
     Serial.print(n);
     Serial.print('\t');
   }
+  else
+  {
+    Serial.print("Error reading n");
+  }
   result = node.readHoldingRegisters(0x001f, 2);
   if (result == node.ku8MBSuccess)
   {
     p = (float)node.receive();
     Serial.print(p);
     Serial.print('\t');
+  }
+  else
+  {
+    Serial.print("Error reading p");
   }
   result = node.readHoldingRegisters(0x0020, 2);
   if (result == node.ku8MBSuccess)
@@ -153,6 +171,10 @@ void readRS485()
     Serial.print(k);
     Serial.print('\t');
   }
+  else
+  {
+    Serial.print("Error reading k");
+  }
   result = node.readHoldingRegisters(0x0012, 2);
   if (result == node.ku8MBSuccess)
   {
@@ -160,12 +182,21 @@ void readRS485()
     Serial.print(soilMoisture);
     Serial.print('\t');
   }
+  else
+  {
+    Serial.print("Error reading soilMoisture");
+  }
   result = node.readHoldingRegisters(0x0013, 2);
   if (result == node.ku8MBSuccess)
   {
     k = (float)node.receive() / 10.0;
     Serial.print(k);
     Serial.print('\t');
+  }
+  else
+  {
+    Serial.print("Error reading soilTemp");
+    Serial.println(result);
   }
 }
 //==============================================================================
@@ -398,8 +429,8 @@ void setup()
   pinMode(LED1, OUTPUT);
   pinMode(LED2, OUTPUT);
   dw(COI, LOW);
-  dw(RELAY1, LOW);
-  dw(RELAY2, LOW);
+  dw(RELAY1, HIGH);
+  dw(RELAY2, HIGH);
   dw(LED1, LOW);
   dw(LED2, LOW);
   displayDisplay("Done", 0, true);
@@ -445,6 +476,8 @@ void setup()
 
 void loop()
 {
+  display.display();
+  delay(10);
   socketIO.loop();
   buttonState1 = digitalRead(NUT1);
   buttonState2 = digitalRead(NUT2);
@@ -453,19 +486,24 @@ void loop()
   if (buttonState1 == LOW && lastButtonState1 == HIGH)
   {
     lastPress1 = millis();
+    Serial.println("Button 1 pressed");
   }
   if (buttonState2 == LOW && lastButtonState2 == HIGH)
   {
+    Serial.println("Button 2 pressed");
     lastPress2 = millis();
   }
   if (buttonState3 == LOW && lastButtonState3 == HIGH)
   {
+    Serial.println("Button 3 pressed");
     lastPress3 = millis();
   }
 
   // release button 1 for modeScreen change
   if (buttonState1 == HIGH && lastButtonState1 == LOW)
   {
+    Serial.println("Button 1 released");
+
     unsigned long elapsedTime = millis() - lastPress1;
     if (elapsedTime > 1000 && elapsedTime < 3000)
     {
@@ -483,6 +521,7 @@ void loop()
   // release button 2 for selected thing change
   if (buttonState2 == HIGH && lastButtonState2 == LOW)
   {
+    Serial.println("Button 1 released");
     unsigned long elapsedTime = millis() - lastPress2;
     if (elapsedTime > 1000 && elapsedTime < 3000)
     {
@@ -494,6 +533,7 @@ void loop()
   // release button 3 for selected thing status change
   if (buttonState3 == HIGH && lastButtonState3 == LOW)
   {
+    Serial.println("Button 1 released");
     unsigned long elapsedTime = millis() - lastPress3;
     if (elapsedTime > 1000)
     {
@@ -505,7 +545,6 @@ void loop()
   // DONE: add modeScreen 1 show info on oled
   if (modeScreen == 1)
   {
-
     display.fillRect(0, 0, 128, 55, SH110X_BLACK);
     // show info of relay 1 and 2 in the oled, the left side is relay 1 and the right side is relay 2, each will hold 1/2 of the width of the oled and 2/3 of the height of the oled
     if (dr(RELAY1) == LOW)
@@ -592,6 +631,4 @@ void loop()
   lastButtonState1 = buttonState1;
   lastButtonState2 = buttonState2;
   lastButtonState3 = buttonState3;
-  display.display();
-  delay(10);
 }
